@@ -1,0 +1,17 @@
+*~
+*.so*
+bin/
+obj/
+*/bin/
+*/obj/
+*.depend
+*.layout
+.svn
+*/.svn
+build*
+*.pro.user
+*.autosave
+*ValgrindOut.xml
+
+*Makefile
+

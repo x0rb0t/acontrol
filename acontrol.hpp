@@ -84,14 +84,16 @@ namespace act
         delete *i;
       }
     }
-    control & operator << (const std::shared_ptr<abstract_task> & t)
+
+    control & schedule(const std::shared_ptr<abstract_task> & t)
     {
       std::unique_lock<std::mutex> lock(m_mutex);
       m_tasks.push_back(t);
       m_cond_var.notify_one();
       return *this;
     }
-    control & operator<< (const sync & )
+
+    control & synchronize()
     {
       std::unique_lock<std::mutex> lock(m_mutex);
       while (!m_tasks.empty())
@@ -101,6 +103,15 @@ namespace act
       return *this;
     }
 
+    control & operator << (const std::shared_ptr<abstract_task> & t)
+    {
+      return schedule(t);
+    }
+
+    control & operator<< (const sync & )
+    {
+      return synchronize();
+    }
 
   };
 
@@ -120,33 +131,28 @@ namespace act
   class task
       : public task<decltype(&T::operator())>
   {
-
-    public:
-    template <typename ... Args>
-    task(const T &v, Args... args) {
-      this->m_func = &v;
-      this->m_vars = std::make_tuple(args ...);
-    }
-    virtual ~task() {}
   };
 
   template <typename ClassType, typename ReturnType, typename ... Args>
   class task<ReturnType(ClassType::*)(Args...) const>: public abstract_task
   {
-  protected:
+  protected:    
+
     const ClassType *m_func;
     std::tuple<Args...> m_vars;
     ReturnType m_return;
   public:
+    task(const ClassType &v, Args... args): m_func(&v), m_vars(args ...)
+    {
+    }
     virtual ~task() {}
     virtual void invoke()
     {
       ReturnType r = caller(typename gens<sizeof...(Args)>::type());
-      m_mutex.lock();
+      std::unique_lock<std::mutex> lock(m_mutex);
       m_return = r;
       m_complete = true;
       m_cond_var.notify_all();
-      m_mutex.unlock();
     }
     template<int ...S>
     ReturnType caller(seq<S...>) {
@@ -159,12 +165,56 @@ namespace act
     }
   };
 
+  template <typename ClassType, typename ... Args>
+  class task<void(ClassType::*)(Args...) const>: public abstract_task
+  {
+  protected:
+
+    const ClassType *m_func;
+    std::tuple<Args...> m_vars;
+  public:
+    task(const ClassType &v, Args... args): m_func(&v), m_vars(args ...)
+    {
+    }
+    virtual ~task() {}
+    virtual void invoke()
+    {
+      caller(typename gens<sizeof...(Args)>::type());
+      std::unique_lock<std::mutex> lock(m_mutex);
+      m_complete = true;
+      m_cond_var.notify_all();
+    }
+    template<int ...S>
+    void caller(seq<S...>) {
+       m_func->operator()(std::get<S>(m_vars) ...);
+    }
+  };
+
+  template <typename ClassType>
+  class task<void(ClassType::*)(void) const>: public abstract_task
+  {
+  protected:
+    const ClassType *m_func;
+  public:
+    task(const ClassType &v): m_func(&v)
+    {
+    }
+    virtual ~task() {}
+    virtual void invoke()
+    {
+      m_func->operator()();
+      std::unique_lock<std::mutex> lock(m_mutex);
+      m_complete = true;
+      m_cond_var.notify_all();
+    }
+  };
 
   template <typename T, typename ... Args>
-  std::shared_ptr<task<T>> make_task(T func, Args ... args )
+  std::shared_ptr<task<decltype(&T::operator())>> make_task(T func, Args ... args )
   {
-    return std::shared_ptr<task<T>>(new task<T>(func, args ...));
+    return std::shared_ptr<task<decltype(&T::operator())>>(new task<decltype(&T::operator())>(func, args ...));
   }
+
 
 }
 #endif // ACONTROL_HPP
