@@ -7,6 +7,8 @@
 #include <memory>
 #include <deque>
 #include <vector>
+#include <algorithm>
+#include <atomic>
 namespace act
 {
   class abstract_task
@@ -36,7 +38,8 @@ namespace act
     std::mutex m_mutex;
     std::condition_variable m_cond_var;
     std::condition_variable m_empty_cond;
-    volatile bool m_run;
+    std::atomic<bool> m_run;
+    std::vector<bool> m_active;
   public:
     struct sync
     {
@@ -45,14 +48,17 @@ namespace act
 
     control(std::size_t pool_size = 2)
     {
-      m_run = true;
-      auto func = [this]()
+      m_run.store(true, std::memory_order_relaxed);
+      auto func = [this](int n)
       {
-        while (m_run)
+        while (m_run.load(std::memory_order_relaxed))
         {
           std::unique_lock<std::mutex> lock(m_mutex);
+          m_active[n] = true;
           if (m_tasks.empty())
           {
+            m_empty_cond.notify_all();
+            m_active[n] = false;
             m_cond_var.wait(lock);
           }
           else
@@ -62,19 +68,21 @@ namespace act
             lock.unlock();
             t->invoke();
             lock.lock();
-            m_empty_cond.notify_all();
+            m_active[n] = false;
           }
-        }
+        }        
       };
+      m_active.resize(pool_size > 0 ? pool_size : 1, false);
       m_pool.resize(pool_size > 0 ? pool_size : 1);
-      for(auto i = m_pool.begin(); i != m_pool.end(); ++i)
+      int n = 0;
+      for(auto i = m_pool.begin(); i != m_pool.end(); ++i, ++n)
       {
-        *i = new std::thread(func);
+        *i = new std::thread(func, n);
       }
     }
     ~control()
     {
-      m_run = false;
+      m_run.store(false, std::memory_order_relaxed);
       std::unique_lock<std::mutex> lock(m_mutex);
       m_cond_var.notify_all();
       lock.unlock();
@@ -88,17 +96,22 @@ namespace act
     control & schedule(const std::shared_ptr<abstract_task> & t)
     {
       std::unique_lock<std::mutex> lock(m_mutex);
-      m_tasks.push_back(t);
-      m_cond_var.notify_one();
+      if (t)
+      {
+        m_tasks.push_back(t);
+        m_cond_var.notify_one();
+      }
       return *this;
     }
 
     control & synchronize()
     {
       std::unique_lock<std::mutex> lock(m_mutex);
-      while (!m_tasks.empty())
+      bool x = false;
+      while (!m_tasks.empty() && (std::for_each(m_active.begin(), m_active.end(), [&x](bool e){if (e) x = true;}), x))
       {
         m_empty_cond.wait(lock);
+        x = false;
       }
       return *this;
     }
@@ -136,8 +149,7 @@ namespace act
   template <typename ClassType, typename ReturnType, typename ... Args>
   class task<ReturnType(ClassType::*)(Args...) const>: public abstract_task
   {
-  protected:    
-
+  protected:
     const ClassType *m_func;
     std::tuple<Args...> m_vars;
     ReturnType m_return;
