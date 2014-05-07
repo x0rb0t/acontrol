@@ -3,8 +3,8 @@
 using namespace std;
 int main()
 {
-  act::control control(8);  
-  std::atomic<int> cnt = {0};
+  act::control control(16);
+  //std::atomic<int> cnt = {0};
   std::vector<double> big;
   for (int i = 0; i < 100000000; ++i)
   {

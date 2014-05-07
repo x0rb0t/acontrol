@@ -14,14 +14,14 @@ namespace act
   class abstract_task
   {
   protected:
-    std::mutex m_mutex;
-    std::condition_variable m_cond_var;
-    bool m_complete;
+    mutable std::mutex m_mutex;
+    mutable std::condition_variable m_cond_var;
+    mutable bool m_complete;
   public:
     abstract_task(): m_complete(false) {}
     virtual ~abstract_task() {}
     virtual void invoke() = 0;
-    virtual void wait()
+    virtual void wait() const
     {
       std::unique_lock<std::mutex> lock(m_mutex);
       while (!m_complete)
@@ -166,15 +166,18 @@ namespace act
       m_complete = true;
       m_cond_var.notify_all();
     }
-    template<int ...S>
-    ReturnType caller(seq<S...>) {
-       return m_func->operator()(std::get<S>(m_vars) ...);
-    }
-    ReturnType get()
+    ReturnType get() const
     {
       wait();
       return m_return;
     }
+
+  private:
+    template<int ...S>
+    ReturnType caller(seq<S...>) const
+    {
+       return m_func->operator()(std::get<S>(m_vars) ...);
+    }    
   };
 
   template <typename ClassType, typename ... Args>
@@ -196,6 +199,7 @@ namespace act
       m_complete = true;
       m_cond_var.notify_all();
     }
+  private:
     template<int ...S>
     void caller(seq<S...>) {
        m_func->operator()(std::get<S>(m_vars) ...);
