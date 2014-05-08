@@ -4,7 +4,7 @@
 #include <future>
 
 #define N_SIZE 100000000
-#define N_THREADS 6
+#define N_THREADS 7
 #define N_PARALLEL 73
 
 int RandomNumber () { return (std::rand()%100); }
@@ -84,13 +84,25 @@ int main()
     std::string name;
     p_test func;
     std::tie(name,func) = test;
-    auto t1 = std::chrono::high_resolution_clock::now();
-    double res = func(INPUT);
-    auto t2 = std::chrono::high_resolution_clock::now();
+    double time = 0;
+    bool v = true;
+    int i = 0;
+    for (i = 0; i < 10; ++i)
+    {
+      auto t1 = std::chrono::high_resolution_clock::now();
+      double res = func(INPUT);
+      auto t2 = std::chrono::high_resolution_clock::now();
+      time += std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count();
+      if (res != test_val)
+      {
+        v = false;
+        break;
+      }
+    }
     std::cout << name
          << " "
-         << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count()
-         << " " << (test_val == res ? "OK" : "ERR") << std::endl;
+         << (time/i)
+         << " " << (v ? "OK" : "ERR") << std::endl;
   }
   return 0;
 }

@@ -5,7 +5,7 @@ CONFIG -= qt
 
 SOURCES += main.cpp
 
-QMAKE_CXXFLAGS += -std=c++11 -lpthread
+QMAKE_CXXFLAGS += -std=c++11
 QMAKE_LFLAGS += -lpthread
 HEADERS += \
     acontrol.hpp

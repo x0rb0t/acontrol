@@ -34,7 +34,7 @@ namespace act
   class control
   {
     std::deque<std::shared_ptr<abstract_task>> m_tasks;
-    std::vector<std::thread*> m_pool;
+    std::vector<std::thread> m_pool;
     std::mutex m_mutex;
     std::condition_variable m_cond_var;
     std::condition_variable m_empty_cond;
@@ -71,12 +71,11 @@ namespace act
           }
         }        
       };
-      m_active.resize(pool_size > 0 ? pool_size : 1, false);
-      m_pool.resize(pool_size > 0 ? pool_size : 1);
-      int n = 0;
-      for(auto i = m_pool.begin(); i != m_pool.end(); ++i, ++n)
+      pool_size = pool_size > 0 ? pool_size : 1;
+      m_active.resize(pool_size, false);
+      for(std::size_t i = 0; i < pool_size; ++i)
       {
-        *i = new std::thread(func, n);
+        m_pool.emplace_back(func, i);
       }
     }
 
@@ -88,8 +87,7 @@ namespace act
       lock.unlock();
       for(auto i = m_pool.begin(); i != m_pool.end(); ++i)
       {
-        (*i)->join();
-        delete *i;
+        (*i).join();
       }
     }
 
