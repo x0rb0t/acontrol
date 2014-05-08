@@ -43,9 +43,8 @@ namespace act
   public:
     struct sync
     {
-
+      /**/
     };
-
     control(std::size_t pool_size = 2)
     {
       m_run.store(true, std::memory_order_relaxed);
@@ -80,7 +79,8 @@ namespace act
         *i = new std::thread(func, n);
       }
     }
-    ~control()
+
+    virtual ~control()
     {
       m_run.store(false, std::memory_order_relaxed);
       std::unique_lock<std::mutex> lock(m_mutex);
@@ -128,7 +128,6 @@ namespace act
 
   };
 
-
   template<int ...>
   struct seq { };
 
@@ -150,13 +149,11 @@ namespace act
   class task<ReturnType(ClassType::*)(Args...) const>: public abstract_task
   {
   protected:
-    const ClassType *m_func;
+    const ClassType &m_func;
     std::tuple<Args...> m_vars;
     ReturnType m_return;
   public:
-    task(const ClassType &v, Args... args): m_func(&v), m_vars(args ...)
-    {
-    }
+    task(const ClassType &v, Args... args): m_func(v), m_vars(args ...) {}
     virtual ~task() {}
     virtual void invoke()
     {
@@ -171,26 +168,22 @@ namespace act
       wait();
       return m_return;
     }
-
   private:
     template<int ...S>
     ReturnType caller(seq<S...>) const
     {
-       return m_func->operator()(std::get<S>(m_vars) ...);
+       return m_func(std::get<S>(m_vars) ...);
     }    
   };
 
   template <typename ClassType, typename ... Args>
   class task<void(ClassType::*)(Args...) const>: public abstract_task
-  {
+  {                                                          
   protected:
-
-    const ClassType *m_func;
+    const ClassType &m_func;
     std::tuple<Args...> m_vars;
   public:
-    task(const ClassType &v, Args... args): m_func(&v), m_vars(args ...)
-    {
-    }
+    task(const ClassType &v, Args... args): m_func(v), m_vars(args ...)  {}
     virtual ~task() {}
     virtual void invoke()
     {
@@ -202,7 +195,7 @@ namespace act
   private:
     template<int ...S>
     void caller(seq<S...>) {
-       m_func->operator()(std::get<S>(m_vars) ...);
+       m_func()(std::get<S>(m_vars) ...);
     }
   };
 
@@ -210,15 +203,13 @@ namespace act
   class task<void(ClassType::*)(void) const>: public abstract_task
   {
   protected:
-    const ClassType *m_func;
+    const ClassType &m_func;
   public:
-    task(const ClassType &v): m_func(&v)
-    {
-    }
+    task(const ClassType &v): m_func(v)  {}
     virtual ~task() {}
     virtual void invoke()
     {
-      m_func->operator()();
+      m_func();
       std::unique_lock<std::mutex> lock(m_mutex);
       m_complete = true;
       m_cond_var.notify_all();
@@ -230,7 +221,6 @@ namespace act
   {
     return std::shared_ptr<task<decltype(&T::operator())>>(new task<decltype(&T::operator())>(func, args ...));
   }
-
 
 }
 #endif // ACONTROL_HPP

@@ -2,36 +2,37 @@
 #include <acontrol.hpp>
 
 #include <future>
-using namespace std;
-int main()
+
+#define N_SIZE 100000000
+#define N_THREADS 6
+#define N_PARALLEL 73
+
+int RandomNumber () { return (std::rand()%100); }
+
+auto lmdb = [](std::vector<double>::const_iterator begin, std::vector<double>::const_iterator end)
 {
-  act::control control(6);
-  //std::atomic<int> cnt = {0};
-  std::vector<double> big;
-  for (int i = 0; i < 100000000; ++i)
+  double sum = 0;
+  for (auto i = begin; i != end; ++i)
   {
-    big.push_back(i);
+    sum+=*i;
   }
-  auto lmdb = [](std::vector<double>::iterator begin, std::vector<double>::iterator end)
-  {
-    double sum = 0;
-    for (auto i = begin; i != end; ++i)
-    {
-      sum+=*i;
-    }
-    return sum;
-  };
-  typedef decltype(act::make_task(lmdb, big.begin(), big.end())) task_type;
+  return sum;
+};
+
+double test_act(const std::vector<double> & input)
+{
+  act::control control(N_THREADS);
+
+  typedef decltype(act::make_task(lmdb, input.begin(), input.end())) task_type;
   std::vector<task_type> tasks;
 
-  auto t1 = std::chrono::high_resolution_clock::now();
-  for (int i =0; i < 100; ++i)
+  for (int i =0; i < N_PARALLEL; ++i)
   {
-    task_type task = act::make_task(lmdb, big.begin(), big.end());
+    task_type task = act::make_task(lmdb, input.begin(), input.end());
     control << task;
     tasks.push_back(task);
   }
-  auto end_task = act::make_task([](std::vector<task_type>::iterator begin, std::vector<task_type>::iterator end)
+  auto end_task = act::make_task([](std::vector<task_type>::const_iterator begin, std::vector<task_type>::const_iterator end)
   {
     double sum = 0;
     for (auto i = begin; i != end; ++i)
@@ -41,19 +42,18 @@ int main()
     return sum;
   }
   , tasks.begin(), tasks.end());
-  control << end_task; 
+  control << end_task;
   control << act::control::sync();
-  double val = end_task->get();
-  auto t2 = std::chrono::high_resolution_clock::now();
-  cout << "act: " << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count() << " " << val << endl;
+  return end_task->get();
+}
 
-  t1 = std::chrono::high_resolution_clock::now();
-  typedef decltype(std::async(std::launch::async, lmdb, big.begin(), big.end())) async_type;
+double test_async(const std::vector<double> & input)
+{
+  typedef decltype(std::async(std::launch::async, lmdb, input.begin(), input.end())) async_type;
   std::vector<async_type> asyncs;
-  for (int i =0; i < 100; ++i)
+  for (int i =0; i < N_PARALLEL; ++i)
   {
-    //async_type handle = ;
-    asyncs.push_back(std::move(std::async(std::launch::async, lmdb, big.begin(), big.end())));
+    asyncs.push_back(std::move(std::async(std::launch::async, lmdb, input.begin(), input.end())));
   }
   auto end_async = std::async(std::launch::async, [](std::vector<async_type>::iterator begin, std::vector<async_type>::iterator end)
   {
@@ -65,10 +65,33 @@ int main()
     return sum;
   }
   , asyncs.begin(), asyncs.end());
-  val = end_async.get();
-  t2 = std::chrono::high_resolution_clock::now();
-  cout << "async: " << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count() << " " << val << endl;
+  return end_async.get();
+}
 
+int main()
+{  
+  typedef double(*p_test)(const std::vector<double> &);
+  std::vector<double> INPUT(N_SIZE);
+  std::generate (INPUT.begin(), INPUT.end(), RandomNumber);
+  std::vector<std::tuple<std::string, p_test>> tests =
+  {
+    std::make_tuple(std::string("test_act"), test_act),
+    std::make_tuple(std::string("test_async"), test_async)
+  };
+  double test_val = lmdb(INPUT.begin(), INPUT.end()) * N_PARALLEL;
+  for (auto test: tests)
+  {
+    std::string name;
+    p_test func;
+    std::tie(name,func) = test;
+    auto t1 = std::chrono::high_resolution_clock::now();
+    double res = func(INPUT);
+    auto t2 = std::chrono::high_resolution_clock::now();
+    std::cout << name
+         << " "
+         << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count()
+         << " " << (test_val == res ? "OK" : "ERR") << std::endl;
+  }
   return 0;
 }
 
